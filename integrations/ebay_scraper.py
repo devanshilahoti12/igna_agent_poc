@@ -37,8 +37,8 @@ async def navigate_ebay_search(
     cancel_context: CancelContext | None = None,
 ) -> None:
     """
-    Load the eBay search page directly, with one retry if the edge returns an
-    access-denied page.
+    Start on eBay's home page before loading search results. Direct search URL
+    entry is more likely to hit eBay's edge access-denied page.
     """
     await page.set_extra_http_headers(
         {
@@ -54,7 +54,11 @@ async def navigate_ebay_search(
         if cancel_context is not None:
             cancel_context.raise_if_cancelled()
 
-        print(f"   [{label}] Navigating to search (attempt {attempt + 1}/2)...")
+        print(f"   [{label}] Opening eBay home page (attempt {attempt + 1}/2)...")
+        await page.goto("https://www.ebay.com/", timeout=30000, wait_until="domcontentloaded")
+        await human_delay(2200, 3200, cancel_context=cancel_context)
+
+        print(f"   [{label}] Navigating to search results...")
         await page.goto(search_url, timeout=30000, wait_until="domcontentloaded")
         await human_delay(2200, 3200, cancel_context=cancel_context)
 
@@ -68,8 +72,6 @@ async def navigate_ebay_search(
         print(f"   [{label}] Access denied page detected, retrying with a fresh eBay session...")
         await page.context.clear_cookies()
         await human_delay(3000, 4500, cancel_context=cancel_context)
-        await page.goto("https://www.ebay.com/", timeout=30000, wait_until="domcontentloaded")
-        await human_delay(2200, 3200, cancel_context=cancel_context)
 
     raise RuntimeError("eBay returned Access Denied for the search page")
 
