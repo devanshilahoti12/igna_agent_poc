@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const API_BASE_URL = "http://127.0.0.1:8000";
 
@@ -17,12 +17,42 @@ export default function App() {
   const [query, setQuery] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [statusMessage, setStatusMessage] = useState("");
   const [result, setResult] = useState(null);
+  const abortControllerRef = useRef(null);
+  const searchIdRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (searchIdRef.current) {
+        void fetch(`${API_BASE_URL}/search/${searchIdRef.current}/cancel`, {
+          method: "POST",
+        }).catch(() => null);
+      }
+      abortControllerRef.current?.abort();
+    };
+  }, []);
+
+  function createSearchId() {
+    if (window.crypto?.randomUUID) {
+      return window.crypto.randomUUID();
+    }
+
+    return `search-${Date.now()}`;
+  }
 
   async function handleSubmit(event) {
     event.preventDefault();
+    abortControllerRef.current?.abort();
+
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
+    const searchId = createSearchId();
+    searchIdRef.current = searchId;
+
     setLoading(true);
     setError("");
+    setStatusMessage("");
     setResult(null);
 
     try {
@@ -30,7 +60,9 @@ export default function App() {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
+          "X-Search-Id": searchId,
         },
+        signal: controller.signal,
         body: JSON.stringify({
           query,
           max_results_per_site: 8,
@@ -45,10 +77,30 @@ export default function App() {
       const payload = await response.json();
       setResult(payload);
     } catch (submitError) {
+      if (submitError.name === "AbortError") {
+        setStatusMessage("Research stopped.");
+        return;
+      }
+
       setError(submitError.message || "Something went wrong.");
     } finally {
+      if (abortControllerRef.current === controller) {
+        abortControllerRef.current = null;
+      }
+      if (searchIdRef.current === searchId) {
+        searchIdRef.current = null;
+      }
       setLoading(false);
     }
+  }
+
+  function handleStop() {
+    if (searchIdRef.current) {
+      void fetch(`${API_BASE_URL}/search/${searchIdRef.current}/cancel`, {
+        method: "POST",
+      }).catch(() => null);
+    }
+    abortControllerRef.current?.abort();
   }
 
   return (
@@ -58,7 +110,7 @@ export default function App() {
 
       <main className="layout">
         <section className="hero-card">
-          <p className="eyebrow">AI Product Discovery</p>
+          <p className="eyebrow"></p>
           <h1>IGNA Competitive Product Research Agent</h1>
           <p className="hero-copy">
             Enter a product search query and let IGNA gather pricing, listings,
@@ -73,16 +125,32 @@ export default function App() {
                 placeholder="Find smartphones under $500 with at least 6GB RAM"
                 value={query}
                 onChange={(event) => setQuery(event.target.value)}
+                disabled={loading}
                 required
               />
             </label>
 
-            <button className="submit-button" type="submit" disabled={loading}>
-              {loading ? "Researching..." : "Search"}
-            </button>
+            <div className="action-row">
+              <button className="submit-button" type="submit" disabled={loading}>
+                {loading ? "Researching..." : "Search"}
+              </button>
+
+              {loading ? (
+                <button
+                  className="stop-button"
+                  type="button"
+                  onClick={handleStop}
+                >
+                  Stop
+                </button>
+              ) : null}
+            </div>
           </form>
 
           {error ? <div className="error-banner">{error}</div> : null}
+          {statusMessage ? (
+            <div className="status-banner">{statusMessage}</div>
+          ) : null}
         </section>
 
         <section className="results-panel">
@@ -161,7 +229,20 @@ export default function App() {
                     <tbody>
                       {result.products.map((product) => (
                         <tr key={`${product.site}-${product.name}`}>
-                          <td>{product.name}</td>
+                          <td>
+                            {product.url ? (
+                              <a
+                                className="product-link"
+                                href={product.url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {product.name}
+                              </a>
+                            ) : (
+                              product.name
+                            )}
+                          </td>
                           <td>{product.site}</td>
                           <td>{formatPrice(product.price)}</td>
                           <td>{product.condition || "N/A"}</td>
