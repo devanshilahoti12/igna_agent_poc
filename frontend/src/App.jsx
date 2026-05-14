@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 
-const API_BASE_URL = "http://127.0.0.1:8010";
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL?.replace(/\/$/, "") ||
+  "http://127.0.0.1:8000";
 
 function formatPrice(price) {
   if (price === null || price === undefined) {
@@ -79,6 +81,13 @@ export default function App() {
     } catch (submitError) {
       if (submitError.name === "AbortError") {
         setStatusMessage("Research stopped.");
+        return;
+      }
+
+      if (submitError instanceof TypeError) {
+        setError(
+          `Could not reach the IGNA API at ${API_BASE_URL}. Make sure the scraper API is running and the frontend VITE_API_BASE_URL matches its port.`
+        );
         return;
       }
 
@@ -171,7 +180,17 @@ export default function App() {
             </div>
           ) : null}
 
-          {result ? (
+          {result && result.status === "infeasible" ? (
+            <div className="results-stack">
+              <article className="infeasible-card">
+                <p className="card-label">Query needs adjustment</p>
+                <h2>{result.query}</h2>
+                <p className="infeasible-copy">{result.summary}</p>
+              </article>
+            </div>
+          ) : null}
+
+          {result && result.status !== "infeasible" ? (
             <div className="results-stack">
               <div className="summary-grid">
                 <article className="info-card">
